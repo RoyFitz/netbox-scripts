@@ -152,17 +152,33 @@ class NetworkDocumentationScript(Script):
         """Get all IP addresses within a prefix with their assigned devices."""
         self.log_info(f"Querying IPs for prefix: {prefix.prefix}")
 
-        # Query IPs contained within this prefix
+        # Try primary method: net_contained lookup
         ip_addresses = IPAddress.objects.filter(
             address__net_contained=prefix.prefix
         ).select_related('tenant').order_by('address')
 
         ip_count = ip_addresses.count()
-        self.log_info(f"  -> Found {ip_count} IP addresses in {prefix.prefix}")
+        self.log_info(f"  -> net_contained query found {ip_count} IPs")
+
+        # Debug: Try alternative query using parent prefix relationship
+        if ip_count == 0:
+            # Check if IPs have this prefix set as their parent
+            alt_ips = IPAddress.objects.filter(parent=prefix)
+            alt_count = alt_ips.count()
+            self.log_info(f"  -> parent=prefix query found {alt_count} IPs")
+
+            if alt_count > 0:
+                ip_addresses = alt_ips.order_by('address')
+                ip_count = alt_count
+
+        # Debug: Show the prefix network details
+        self.log_debug(f"  Prefix object: {prefix}")
+        self.log_debug(f"  Prefix.prefix type: {type(prefix.prefix)}")
+        self.log_debug(f"  Prefix.prefix value: {prefix.prefix}")
 
         # Log first few IPs for debugging
         if ip_count > 0:
-            for ip in ip_addresses[:3]:
+            for ip in list(ip_addresses)[:3]:
                 self.log_info(f"     Sample IP: {ip.address} (assigned: {ip.assigned_object})")
             if ip_count > 3:
                 self.log_info(f"     ... and {ip_count - 3} more")
@@ -518,6 +534,15 @@ class NetworkDocumentationScript(Script):
                 self.log_info("=" * 50)
                 self.log_info("PHASE 1: Data Collection")
                 self.log_info("=" * 50)
+
+                # Debug: Check total IP addresses in branch
+                total_ips = IPAddress.objects.count()
+                self.log_info(f"DEBUG: Total IP addresses in current context: {total_ips}")
+
+                # Debug: Sample some IPs to verify branch context
+                sample_ips = IPAddress.objects.all()[:5]
+                for ip in sample_ips:
+                    self.log_info(f"DEBUG: Sample IP: {ip.address}")
 
                 prefixes = self._get_site_prefixes(site)
                 vlans = self._get_site_vlans(site)
