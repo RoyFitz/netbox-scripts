@@ -550,9 +550,9 @@ class NetworkDocumentationScript(Script):
                                     if (current_row - data_start_row) % 2 == 1:
                                         cell.fill = self.ALT_ROW_FILL
                         else:
-                            # This IP is available/unused
+                            # This IP is available/unused - include prefix length
                             row_data = [
-                                ip_str,
+                                f"{ip_str}/{prefix_size}",
                                 "",
                                 "",
                                 "",
