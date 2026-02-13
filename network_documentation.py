@@ -186,25 +186,20 @@ class NetworkDocumentationScript(Script):
     def _get_ip_device_info(self, ip_address):
         """
         Extract device/VM information from an IP address assignment.
-        Returns dict with device_name, device_role, interface_name, device_type.
+        Returns dict with device_name, device_role, device_model, interface_name, device_type.
         """
         result = {
             'device_name': '',
             'device_role': '',
+            'device_model': '',
             'interface_name': '',
             'device_type': '',
             'status': str(ip_address.status) if ip_address.status else ''
         }
 
-        # Log the raw IP object details
-        self.log_debug(f"Processing IP: {ip_address.address}")
-        self.log_debug(f"  assigned_object_type_id: {ip_address.assigned_object_type_id}")
-        self.log_debug(f"  assigned_object_id: {ip_address.assigned_object_id}")
-
         assigned_object = ip_address.assigned_object
 
         if assigned_object is None:
-            self.log_info(f"IP {ip_address.address} - no assigned interface/device")
             return result
 
         try:
@@ -213,18 +208,18 @@ class NetworkDocumentationScript(Script):
                 device = assigned_object.device
                 result['device_name'] = device.name if device else ''
                 result['device_role'] = device.role.name if device and device.role else ''
+                result['device_model'] = device.device_type.model if device and device.device_type else ''
                 result['interface_name'] = assigned_object.name
                 result['device_type'] = 'Device'
-                self.log_debug(f"IP {ip_address.address} -> Device: {result['device_name']}")
 
             elif isinstance(assigned_object, VMInterface):
                 # Virtual machine interface
                 vm = assigned_object.virtual_machine
                 result['device_name'] = vm.name if vm else ''
                 result['device_role'] = vm.role.name if vm and vm.role else ''
+                result['device_model'] = vm.platform.name if vm and vm.platform else 'Virtual'
                 result['interface_name'] = assigned_object.name
                 result['device_type'] = 'VM'
-                self.log_debug(f"IP {ip_address.address} -> VM: {result['device_name']}")
 
             else:
                 # Some other assignment type
@@ -446,7 +441,7 @@ class NetworkDocumentationScript(Script):
                 ws = workbook.create_sheet(sheet_name)
 
                 # Set column widths
-                col_widths = [18, 25, 20, 20, 12, 15]
+                col_widths = [18, 25, 18, 22, 18, 10, 12]
                 for i, width in enumerate(col_widths, 1):
                     ws.column_dimensions[get_column_letter(i)].width = width
 
@@ -475,7 +470,7 @@ class NetworkDocumentationScript(Script):
 
                 # Table headers
                 current_row = 7
-                headers = ["IP Address", "Device/VM Name", "Device Role", "Interface", "Type", "Status"]
+                headers = ["IP Address", "Device/VM Name", "Device Role", "Device Model", "Interface", "Type", "Status"]
                 for col, header in enumerate(headers, 1):
                     cell = ws.cell(row=current_row, column=col, value=header)
                     cell.font = self.HEADER_FONT
@@ -502,6 +497,7 @@ class NetworkDocumentationScript(Script):
                             ip_display,
                             device_info['device_name'] or "Unassigned",
                             device_info['device_role'] or "N/A",
+                            device_info['device_model'] or "N/A",
                             device_info['interface_name'] or "N/A",
                             device_info['device_type'] or "N/A",
                             device_info['status'] or "N/A"
