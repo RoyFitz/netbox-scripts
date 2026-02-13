@@ -77,6 +77,8 @@ class NetworkDocumentationScript(Script):
         self.HEADER_FILL = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
         self.ALT_ROW_FILL = PatternFill(start_color="D6DCE4", end_color="D6DCE4", fill_type="solid")
         self.ORPHAN_HEADER_FILL = PatternFill(start_color="C65911", end_color="C65911", fill_type="solid")
+        self.GATEWAY_FILL = PatternFill(start_color="FFC000", end_color="FFC000", fill_type="solid")  # Gold/yellow
+        self.GATEWAY_FONT = Font(name="Calibri", size=11, bold=True)
 
         # Fonts
         self.TITLE_FONT = Font(name="Calibri", size=28, bold=True, color="1F4E79")
@@ -147,6 +149,13 @@ class NetworkDocumentationScript(Script):
             self.log_info("No orphan VLANs found - all VLANs are associated with prefixes")
 
         return orphan_vlans
+
+    def _is_default_gateway(self, ip_address):
+        """Check if an IP address has the 'default-gateway' tag."""
+        try:
+            return ip_address.tags.filter(slug='default-gateway').exists()
+        except Exception:
+            return False
 
     def _get_prefix_ip_addresses(self, prefix):
         """Get all IP addresses within a prefix with their assigned devices."""
@@ -435,6 +444,10 @@ class NetworkDocumentationScript(Script):
                 for i, width in enumerate(col_widths, 1):
                     ws.column_dimensions[get_column_letter(i)].width = width
 
+                # Find default gateway IP(s) in this prefix
+                gateway_ips = [ip for ip in ip_addresses if self._is_default_gateway(ip)]
+                gateway_str = ", ".join(str(ip.address).split('/')[0] for ip in gateway_ips) if gateway_ips else "N/A"
+
                 # Prefix header info
                 ws['A1'] = f"Prefix: {prefix.prefix}"
                 ws['A1'].font = self.SECTION_FONT
@@ -448,8 +461,14 @@ class NetworkDocumentationScript(Script):
                 ws['A4'] = f"Role: {prefix.role.name if prefix.role else 'N/A'}"
                 ws['A4'].font = self.SUBTITLE_FONT
 
+                # Default Gateway row (highlighted)
+                ws['A5'] = f"Default Gateway: {gateway_str}"
+                ws['A5'].font = self.GATEWAY_FONT
+                if gateway_ips:
+                    ws['A5'].fill = self.GATEWAY_FILL
+
                 # Table headers
-                current_row = 6
+                current_row = 7
                 headers = ["IP Address", "Device/VM Name", "Device Role", "Interface", "Type", "Status"]
                 for col, header in enumerate(headers, 1):
                     cell = ws.cell(row=current_row, column=col, value=header)
@@ -466,9 +485,15 @@ class NetworkDocumentationScript(Script):
                 for ip in ip_addresses:
                     try:
                         device_info = self._get_ip_device_info(ip)
+                        is_gateway = self._is_default_gateway(ip)
+
+                        # Add (GW) marker to IP address if it's the default gateway
+                        ip_display = str(ip.address)
+                        if is_gateway:
+                            ip_display = f"{ip.address} (GW)"
 
                         row_data = [
-                            str(ip.address),
+                            ip_display,
                             device_info['device_name'] or "Unassigned",
                             device_info['device_role'] or "N/A",
                             device_info['interface_name'] or "N/A",
@@ -478,13 +503,17 @@ class NetworkDocumentationScript(Script):
 
                         for col, value in enumerate(row_data, 1):
                             cell = ws.cell(row=current_row, column=col, value=value)
-                            cell.font = self.NORMAL_FONT
                             cell.border = self.CELL_BORDER
 
-                        # Alternate row coloring
-                        if (current_row - data_start_row) % 2 == 1:
-                            for col in range(1, len(headers) + 1):
-                                ws.cell(row=current_row, column=col).fill = self.ALT_ROW_FILL
+                            # Highlight gateway rows
+                            if is_gateway:
+                                cell.font = self.GATEWAY_FONT
+                                cell.fill = self.GATEWAY_FILL
+                            else:
+                                cell.font = self.NORMAL_FONT
+                                # Alternate row coloring for non-gateway rows
+                                if (current_row - data_start_row) % 2 == 1:
+                                    cell.fill = self.ALT_ROW_FILL
 
                         current_row += 1
                         ip_count += 1
