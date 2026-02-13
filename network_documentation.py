@@ -24,6 +24,15 @@ try:
 except ImportError:
     OPENPYXL_AVAILABLE = False
 
+# Check for NetBox Branching plugin
+try:
+    from netbox_branching.models import Branch
+    from netbox_branching.utilities import activate_branch
+    BRANCHING_AVAILABLE = True
+except ImportError:
+    BRANCHING_AVAILABLE = False
+    Branch = None
+
 
 class NetworkDocumentationScript(Script):
     """Generate Excel network documentation for a site."""
@@ -47,6 +56,14 @@ class NetworkDocumentationScript(Script):
         default=True,
         description="Include prefixes with no IP addresses assigned"
     )
+
+    # Branch selector (only shown if netbox_branching plugin is available)
+    if BRANCHING_AVAILABLE:
+        branch = ObjectVar(
+            model=Branch,
+            required=False,
+            description="Select a branch to query data from (leave empty for main/production)"
+        )
 
     # ==========================================================================
     # Styles
@@ -469,39 +486,61 @@ class NetworkDocumentationScript(Script):
 
         site = data['site']
         include_empty = data.get('include_empty_prefixes', True)
+        branch = data.get('branch', None) if BRANCHING_AVAILABLE else None
 
         self.log_info(f"Starting network documentation generation for site: {site.name}")
         self.log_debug(f"Site ID: {site.id}, Slug: {site.slug}")
+
+        if branch:
+            self.log_info(f"Using branch: {branch.name}")
+        else:
+            self.log_info("Using main/production schema")
 
         try:
             # Initialize styles
             self._init_styles()
 
-            # Collect data
-            self.log_info("=" * 50)
-            self.log_info("PHASE 1: Data Collection")
-            self.log_info("=" * 50)
+            # Define the main work function to run with or without branch context
+            def do_work():
+                # Collect data
+                self.log_info("=" * 50)
+                self.log_info("PHASE 1: Data Collection")
+                self.log_info("=" * 50)
 
-            prefixes = self._get_site_prefixes(site)
-            vlans = self._get_site_vlans(site)
-            orphan_vlans = self._get_orphan_vlans(site, prefixes)
+                prefixes = self._get_site_prefixes(site)
+                vlans = self._get_site_vlans(site)
+                orphan_vlans = self._get_orphan_vlans(site, prefixes)
 
-            # Validate we have data to document
-            if prefixes.count() == 0 and vlans.count() == 0:
-                self.log_failure(f"No network data found for site '{site.name}'")
-                return f"ERROR: No prefixes or VLANs found for site '{site.name}'"
+                # Validate we have data to document
+                if prefixes.count() == 0 and vlans.count() == 0:
+                    self.log_failure(f"No network data found for site '{site.name}'")
+                    return None, f"ERROR: No prefixes or VLANs found for site '{site.name}'"
 
-            # Create workbook
-            self.log_info("=" * 50)
-            self.log_info("PHASE 2: Excel Document Generation")
-            self.log_info("=" * 50)
+                # Create workbook
+                self.log_info("=" * 50)
+                self.log_info("PHASE 2: Excel Document Generation")
+                self.log_info("=" * 50)
 
-            workbook = openpyxl.Workbook()
+                workbook = openpyxl.Workbook()
 
-            # Build sheets
-            self._create_cover_page(workbook, site)
-            self._create_summary_sheet(workbook, site, prefixes, orphan_vlans)
-            self._create_prefix_sheets(workbook, prefixes, include_empty)
+                # Build sheets
+                self._create_cover_page(workbook, site)
+                self._create_summary_sheet(workbook, site, prefixes, orphan_vlans)
+                self._create_prefix_sheets(workbook, prefixes, include_empty)
+
+                return workbook, None
+
+            # Execute with or without branch context
+            if branch and BRANCHING_AVAILABLE:
+                self.log_debug(f"Activating branch context: {branch.name}")
+                with activate_branch(branch):
+                    workbook, error = do_work()
+            else:
+                workbook, error = do_work()
+
+            # Check for errors from data collection
+            if error:
+                return error
 
             # Save to buffer
             self.log_info("=" * 50)
