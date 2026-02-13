@@ -150,7 +150,7 @@ class NetworkDocumentationScript(Script):
 
     def _get_prefix_ip_addresses(self, prefix):
         """Get all IP addresses within a prefix with their assigned devices."""
-        self.log_debug(f"Querying IP addresses for prefix: {prefix.prefix}")
+        self.log_info(f"Querying IPs for prefix: {prefix.prefix}")
 
         # Query IPs contained within this prefix
         ip_addresses = IPAddress.objects.filter(
@@ -158,7 +158,14 @@ class NetworkDocumentationScript(Script):
         ).select_related('tenant').order_by('address')
 
         ip_count = ip_addresses.count()
-        self.log_debug(f"Found {ip_count} IP addresses in prefix {prefix.prefix}")
+        self.log_info(f"  -> Found {ip_count} IP addresses in {prefix.prefix}")
+
+        # Log first few IPs for debugging
+        if ip_count > 0:
+            for ip in ip_addresses[:3]:
+                self.log_info(f"     Sample IP: {ip.address} (assigned: {ip.assigned_object})")
+            if ip_count > 3:
+                self.log_info(f"     ... and {ip_count - 3} more")
 
         return ip_addresses
 
@@ -175,10 +182,15 @@ class NetworkDocumentationScript(Script):
             'status': str(ip_address.status) if ip_address.status else ''
         }
 
+        # Log the raw IP object details
+        self.log_debug(f"Processing IP: {ip_address.address}")
+        self.log_debug(f"  assigned_object_type_id: {ip_address.assigned_object_type_id}")
+        self.log_debug(f"  assigned_object_id: {ip_address.assigned_object_id}")
+
         assigned_object = ip_address.assigned_object
 
         if assigned_object is None:
-            self.log_debug(f"IP {ip_address.address} has no assigned object")
+            self.log_info(f"IP {ip_address.address} - no assigned interface/device")
             return result
 
         try:
