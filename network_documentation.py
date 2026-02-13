@@ -406,7 +406,8 @@ class NetworkDocumentationScript(Script):
                 start_value=0,
                 end_type='num',
                 end_value=100,
-                color='63BE7B'  # Green color
+                color='63BE7B',  # Green color
+                minLength=0  # No bar when value is 0
             )
 
             ws.conditional_formatting.add(f'E{first_row}:E{last_row}', data_bar_rule)
