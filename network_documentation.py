@@ -509,37 +509,74 @@ class NetworkDocumentationScript(Script):
             self.log_info("=" * 50)
 
             buffer = BytesIO()
+            self.log_debug("Saving workbook to buffer...")
             workbook.save(buffer)
+            self.log_debug("Workbook saved, seeking to start...")
             buffer.seek(0)
+            file_content = buffer.getvalue()
 
             # Generate filename
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             filename = f"{site.slug}_network_documentation_{timestamp}.xlsx"
 
-            self.log_info(f"Workbook saved to buffer, size: {buffer.getbuffer().nbytes} bytes")
+            self.log_info(f"Workbook saved to buffer, size: {len(file_content)} bytes")
             self.log_debug(f"Filename: {filename}")
 
-            # Return file for download
-            # Note: NetBox 3.x+ uses FileProxy from utilities
+            # Save file using NetBox 4.x Job file output
+            self.log_debug("Attempting to save file output...")
             try:
-                from utilities.files import FileProxy
-                self.log_success(f"Documentation generated successfully: {filename}")
-                return FileProxy(
-                    buffer,
-                    filename,
-                    content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-                )
-            except ImportError:
-                # Fallback for older NetBox versions - save file content for manual handling
-                self.log_warning("FileProxy not available - returning file info only")
-                self.log_success(f"Documentation data prepared: {filename}")
+                from django.core.files.base import ContentFile
 
-                # Alternative: You could save to a temp file or return base64
+                # NetBox 4.x stores job file output via the job model
+                if hasattr(self, 'job') and self.job is not None:
+                    self.log_debug(f"Job object found: {self.job}")
+                    self.log_debug(f"Job attributes: {dir(self.job)}")
+
+                    # Try to use the job's output_file field if available
+                    if hasattr(self.job, 'output_file'):
+                        self.log_debug("Using job.output_file for file storage")
+                        self.job.output_file.save(filename, ContentFile(file_content))
+                        self.job.save()
+                        self.log_success(f"Documentation saved: {filename}")
+                        return f"Documentation generated successfully!\nFile: {filename}\nSize: {len(file_content)} bytes\n\nCheck the job output to download the file."
+                    else:
+                        self.log_debug("job.output_file not available")
+                else:
+                    self.log_debug("No job object available")
+
+                # Fallback: Save to media directory
+                import os
+                from django.conf import settings
+
+                media_root = getattr(settings, 'MEDIA_ROOT', '/opt/netbox/netbox/media')
+                scripts_output_dir = os.path.join(media_root, 'script-outputs')
+
+                self.log_debug(f"Media root: {media_root}")
+                self.log_debug(f"Scripts output dir: {scripts_output_dir}")
+
+                # Create output directory if it doesn't exist
+                os.makedirs(scripts_output_dir, exist_ok=True)
+
+                file_path = os.path.join(scripts_output_dir, filename)
+                self.log_debug(f"Writing file to: {file_path}")
+
+                with open(file_path, 'wb') as f:
+                    f.write(file_content)
+
+                self.log_success(f"Documentation generated: {filename}")
+                return f"Documentation generated successfully!\n\nFile saved to: {file_path}\nSize: {len(file_content)} bytes\n\nDownload from: /media/script-outputs/{filename}"
+
+            except Exception as file_error:
+                self.log_warning(f"Error saving file: {str(file_error)}")
+                self.log_debug(f"File error type: {type(file_error).__name__}")
+                import traceback
+                self.log_debug(f"File save traceback:\n{traceback.format_exc()}")
+
+                # Last resort: return base64 encoded data
                 import base64
-                file_data = base64.b64encode(buffer.getvalue()).decode('utf-8')
-                self.log_debug(f"File data encoded (base64), length: {len(file_data)} chars")
-
-                return f"File generated: {filename}\nSize: {buffer.getbuffer().nbytes} bytes\nNote: FileProxy not available in this NetBox version."
+                encoded = base64.b64encode(file_content).decode('utf-8')
+                self.log_success(f"Documentation generated (base64 encoded)")
+                return f"Documentation generated but could not save file.\nFilename: {filename}\nSize: {len(file_content)} bytes\n\nBase64 data (first 100 chars): {encoded[:100]}..."
 
         except Exception as e:
             self.log_failure(f"Unexpected error during script execution: {str(e)}")
