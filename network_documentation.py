@@ -309,7 +309,7 @@ class NetworkDocumentationScript(Script):
 
         # Table headers
         current_row += 1
-        headers = ["Prefix", "VLAN ID", "VLAN Name", "Description", "Utilization"]
+        headers = ["Prefix", "VLAN ID", "VLAN Name", "Description", "Used/Available"]
         for col, header in enumerate(headers, 1):
             cell = ws.cell(row=current_row, column=col, value=header)
             cell.font = self.HEADER_FONT
@@ -327,14 +327,21 @@ class NetworkDocumentationScript(Script):
 
         for prefix in prefixes:
             try:
-                # Get utilization from NetBox's built-in method
+                # Calculate utilization as used/total count
                 try:
-                    utilization_data = prefix.get_utilization()
-                    # get_utilization() returns a decimal (0-100) or dict depending on version
-                    if isinstance(utilization_data, dict):
-                        utilization = f"{utilization_data.get('utilization', 0):.1f}%"
+                    import netaddr
+                    prefix_network = netaddr.IPNetwork(str(prefix.prefix))
+                    # Total usable IPs (excluding network and broadcast for /30 or larger)
+                    if prefix_network.prefixlen <= 30:
+                        total_ips = prefix_network.size - 2
                     else:
-                        utilization = f"{float(utilization_data):.1f}%"
+                        total_ips = prefix_network.size  # /31 and /32 use all addresses
+
+                    # Count assigned IPs using our method
+                    assigned_ips = self._get_prefix_ip_addresses(prefix)
+                    used_ips = len(assigned_ips)
+
+                    utilization = f"{used_ips} / {total_ips}"
                 except Exception:
                     utilization = "N/A"
 
