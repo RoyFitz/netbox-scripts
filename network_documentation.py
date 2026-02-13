@@ -57,6 +57,11 @@ class NetworkDocumentationScript(Script):
         description="Include prefixes with no IP addresses assigned"
     )
 
+    show_unused_ips = BooleanVar(
+        default=True,
+        description="Show unused/available IP addresses in each prefix (only for prefixes /24 or smaller)"
+    )
+
     # Branch selector (only shown if netbox_branching plugin is available)
     if BRANCHING_AVAILABLE:
         branch = ObjectVar(
@@ -416,20 +421,26 @@ class NetworkDocumentationScript(Script):
 
         self.log_debug("Summary sheet created successfully")
 
-    def _create_prefix_sheets(self, workbook, prefixes, include_empty, prefix_sheet_names):
+    def _create_prefix_sheets(self, workbook, prefixes, include_empty, prefix_sheet_names, show_unused_ips):
         """Create individual worksheets for each prefix."""
-        self.log_info(f"Creating prefix detail sheets (include_empty={include_empty})")
+        import netaddr
+
+        self.log_info(f"Creating prefix detail sheets (include_empty={include_empty}, show_unused={show_unused_ips})")
+
+        # Style for available/unused IPs
+        available_font = Font(name="Calibri", size=11, italic=True, color="808080")
+        available_fill = PatternFill(start_color="F0F0F0", end_color="F0F0F0", fill_type="solid")
 
         sheets_created = 0
         sheets_skipped = 0
 
         for prefix in prefixes:
             try:
-                # Get IP addresses for this prefix
-                ip_addresses = self._get_prefix_ip_addresses(prefix)
+                # Get assigned IP addresses for this prefix
+                assigned_ips = self._get_prefix_ip_addresses(prefix)
 
-                # Skip empty prefixes if configured
-                if not include_empty and len(ip_addresses) == 0:
+                # Skip empty prefixes if configured (and not showing unused)
+                if not include_empty and len(assigned_ips) == 0 and not show_unused_ips:
                     self.log_debug(f"Skipping empty prefix: {prefix.prefix}")
                     sheets_skipped += 1
                     continue
@@ -446,7 +457,7 @@ class NetworkDocumentationScript(Script):
                     ws.column_dimensions[get_column_letter(i)].width = width
 
                 # Find default gateway IP(s) in this prefix
-                gateway_ips = [ip for ip in ip_addresses if self._is_default_gateway(ip)]
+                gateway_ips = [ip for ip in assigned_ips if self._is_default_gateway(ip)]
                 gateway_str = ", ".join(str(ip.address).split('/')[0] for ip in gateway_ips) if gateway_ips else "N/A"
 
                 # Prefix header info
@@ -478,50 +489,89 @@ class NetworkDocumentationScript(Script):
                     cell.alignment = self.CENTER_ALIGN
                     cell.border = self.CELL_BORDER
 
+                # Build IP list - either all IPs in range or just assigned
+                prefix_network = netaddr.IPNetwork(str(prefix.prefix))
+                prefix_size = prefix_network.prefixlen
+
+                # Create lookup of assigned IPs by address
+                assigned_ip_lookup = {}
+                for ip in assigned_ips:
+                    ip_addr_str = str(ip.address).split('/')[0]
+                    assigned_ip_lookup[ip_addr_str] = ip
+
+                # Determine if we should show all IPs (only for /24 or smaller to avoid huge lists)
+                show_all_ips = show_unused_ips and prefix_size >= 24
+
+                if show_all_ips:
+                    # Generate all usable IPs in the prefix
+                    all_ips_in_prefix = list(prefix_network.iter_hosts())
+                else:
+                    # Just use assigned IPs
+                    all_ips_in_prefix = [netaddr.IPAddress(str(ip.address).split('/')[0]) for ip in assigned_ips]
+
                 # IP address data rows
                 current_row += 1
                 data_start_row = current_row
                 ip_count = 0
 
-                for ip in ip_addresses:
+                for ip_addr in all_ips_in_prefix:
                     try:
-                        device_info = self._get_ip_device_info(ip)
-                        is_gateway = self._is_default_gateway(ip)
+                        ip_str = str(ip_addr)
+                        assigned_ip = assigned_ip_lookup.get(ip_str)
 
-                        # Add (GW) marker to IP address if it's the default gateway
-                        ip_display = str(ip.address)
-                        if is_gateway:
-                            ip_display = f"{ip.address} (GW)"
+                        if assigned_ip:
+                            # This IP is assigned - show full details
+                            device_info = self._get_ip_device_info(assigned_ip)
+                            is_gateway = self._is_default_gateway(assigned_ip)
 
-                        row_data = [
-                            ip_display,
-                            device_info['device_name'] or "Unassigned",
-                            device_info['device_role'] or "N/A",
-                            device_info['device_model'] or "N/A",
-                            device_info['interface_name'] or "N/A",
-                            device_info['device_type'] or "N/A",
-                            device_info['status'] or "N/A"
-                        ]
-
-                        for col, value in enumerate(row_data, 1):
-                            cell = ws.cell(row=current_row, column=col, value=value)
-                            cell.border = self.CELL_BORDER
-
-                            # Highlight gateway rows
+                            ip_display = str(assigned_ip.address)
                             if is_gateway:
-                                cell.font = self.GATEWAY_FONT
-                                cell.fill = self.GATEWAY_FILL
-                            else:
-                                cell.font = self.NORMAL_FONT
-                                # Alternate row coloring for non-gateway rows
-                                if (current_row - data_start_row) % 2 == 1:
-                                    cell.fill = self.ALT_ROW_FILL
+                                ip_display = f"{assigned_ip.address} (GW)"
+
+                            row_data = [
+                                ip_display,
+                                device_info['device_name'] or "Unassigned",
+                                device_info['device_role'] or "N/A",
+                                device_info['device_model'] or "N/A",
+                                device_info['interface_name'] or "N/A",
+                                device_info['device_type'] or "N/A",
+                                device_info['status'] or "N/A"
+                            ]
+
+                            for col, value in enumerate(row_data, 1):
+                                cell = ws.cell(row=current_row, column=col, value=value)
+                                cell.border = self.CELL_BORDER
+
+                                if is_gateway:
+                                    cell.font = self.GATEWAY_FONT
+                                    cell.fill = self.GATEWAY_FILL
+                                else:
+                                    cell.font = self.NORMAL_FONT
+                                    if (current_row - data_start_row) % 2 == 1:
+                                        cell.fill = self.ALT_ROW_FILL
+                        else:
+                            # This IP is available/unused
+                            row_data = [
+                                ip_str,
+                                "",
+                                "",
+                                "",
+                                "",
+                                "",
+                                "Available"
+                            ]
+
+                            for col, value in enumerate(row_data, 1):
+                                cell = ws.cell(row=current_row, column=col, value=value)
+                                cell.border = self.CELL_BORDER
+                                cell.font = available_font
+                                cell.fill = available_fill
 
                         current_row += 1
                         ip_count += 1
 
                     except Exception as e:
-                        self.log_warning(f"Error processing IP {ip.address}: {str(e)}")
+                        self.log_warning(f"Error processing IP {ip_addr}: {str(e)}")
 
                 self.log_debug(f"Prefix {prefix.prefix}: {ip_count} IP addresses documented")
                 sheets_created += 1
@@ -545,6 +595,7 @@ class NetworkDocumentationScript(Script):
 
         site = data['site']
         include_empty = data.get('include_empty_prefixes', True)
+        show_unused_ips = data.get('show_unused_ips', True)
         branch = data.get('branch', None) if BRANCHING_AVAILABLE else None
 
         self.log_info(f"Starting network documentation generation for site: {site.name}")
@@ -596,7 +647,7 @@ class NetworkDocumentationScript(Script):
                 # Build sheets
                 self._create_cover_page(workbook, site)
                 self._create_summary_sheet(workbook, site, prefixes, orphan_vlans, prefix_sheet_names)
-                self._create_prefix_sheets(workbook, prefixes, include_empty, prefix_sheet_names)
+                self._create_prefix_sheets(workbook, prefixes, include_empty, prefix_sheet_names, show_unused_ips)
 
                 return workbook, None
 
