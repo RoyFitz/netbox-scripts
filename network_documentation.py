@@ -286,7 +286,7 @@ class NetworkDocumentationScript(Script):
 
         self.log_debug("Cover page created successfully")
 
-    def _create_summary_sheet(self, workbook, site, prefixes, orphan_vlans):
+    def _create_summary_sheet(self, workbook, site, prefixes, orphan_vlans, prefix_sheet_names):
         """Create the summary worksheet with prefix/VLAN overview."""
         self.log_info("Creating summary sheet")
 
@@ -322,6 +322,9 @@ class NetworkDocumentationScript(Script):
         prefix_start_row = current_row
         prefixes_with_data = 0
 
+        # Link font style (blue, underlined)
+        link_font = Font(name="Calibri", size=11, color="0563C1", underline="single")
+
         for prefix in prefixes:
             try:
                 # Get utilization from NetBox's built-in method
@@ -347,12 +350,23 @@ class NetworkDocumentationScript(Script):
                     cell = ws.cell(row=current_row, column=col, value=value)
                     cell.font = self.NORMAL_FONT
                     cell.border = self.CELL_BORDER
-                    cell.alignment = self.LEFT_ALIGN if col > 1 else self.LEFT_ALIGN
+                    cell.alignment = self.LEFT_ALIGN
+
+                # Make prefix cell a hyperlink to its worksheet
+                sheet_name = prefix_sheet_names.get(prefix.id)
+                if sheet_name:
+                    prefix_cell = ws.cell(row=current_row, column=1)
+                    prefix_cell.hyperlink = f"#'{sheet_name}'!A1"
+                    prefix_cell.font = link_font
 
                 # Alternate row coloring
                 if (current_row - prefix_start_row) % 2 == 1:
                     for col in range(1, len(headers) + 1):
-                        ws.cell(row=current_row, column=col).fill = self.ALT_ROW_FILL
+                        cell = ws.cell(row=current_row, column=col)
+                        cell.fill = self.ALT_ROW_FILL
+                        # Preserve link styling for prefix column
+                        if col == 1 and sheet_name:
+                            cell.font = link_font
 
                 current_row += 1
                 prefixes_with_data += 1
@@ -407,7 +421,7 @@ class NetworkDocumentationScript(Script):
 
         self.log_debug("Summary sheet created successfully")
 
-    def _create_prefix_sheets(self, workbook, prefixes, include_empty):
+    def _create_prefix_sheets(self, workbook, prefixes, include_empty, prefix_sheet_names):
         """Create individual worksheets for each prefix."""
         self.log_info(f"Creating prefix detail sheets (include_empty={include_empty})")
 
@@ -420,21 +434,13 @@ class NetworkDocumentationScript(Script):
                 ip_addresses = self._get_prefix_ip_addresses(prefix)
 
                 # Skip empty prefixes if configured
-                if not include_empty and ip_addresses.count() == 0:
+                if not include_empty and len(ip_addresses) == 0:
                     self.log_debug(f"Skipping empty prefix: {prefix.prefix}")
                     sheets_skipped += 1
                     continue
 
-                # Create sheet with prefix description (or CIDR if no description)
-                # Excel limits sheet names to 31 chars, must remove invalid chars: \ / * ? : [ ]
-                if prefix.description:
-                    sheet_name = prefix.description
-                else:
-                    sheet_name = str(prefix.prefix).replace('/', '_')
-                # Sanitize for Excel
-                for char in ['\\', '/', '*', '?', ':', '[', ']']:
-                    sheet_name = sheet_name.replace(char, '-')
-                sheet_name = sheet_name[:31]
+                # Get pre-calculated sheet name
+                sheet_name = prefix_sheet_names.get(prefix.id, str(prefix.prefix).replace('/', '_')[:31])
                 self.log_debug(f"Creating sheet for prefix: {prefix.prefix} as '{sheet_name}'")
 
                 ws = workbook.create_sheet(sheet_name)
@@ -580,10 +586,21 @@ class NetworkDocumentationScript(Script):
 
                 workbook = openpyxl.Workbook()
 
+                # Pre-calculate sheet names for each prefix (needed for hyperlinks)
+                prefix_sheet_names = {}
+                for prefix in prefixes:
+                    vlan_id = str(prefix.vlan.vid) if prefix.vlan else "NoVLAN"
+                    description = prefix.description or str(prefix.prefix).replace('/', '_')
+                    sheet_name = f"{vlan_id} - {description}"
+                    for char in ['\\', '/', '*', '?', ':', '[', ']']:
+                        sheet_name = sheet_name.replace(char, '-')
+                    sheet_name = sheet_name[:31]
+                    prefix_sheet_names[prefix.id] = sheet_name
+
                 # Build sheets
                 self._create_cover_page(workbook, site)
-                self._create_summary_sheet(workbook, site, prefixes, orphan_vlans)
-                self._create_prefix_sheets(workbook, prefixes, include_empty)
+                self._create_summary_sheet(workbook, site, prefixes, orphan_vlans, prefix_sheet_names)
+                self._create_prefix_sheets(workbook, prefixes, include_empty, prefix_sheet_names)
 
                 return workbook, None
 
