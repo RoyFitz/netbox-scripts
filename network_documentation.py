@@ -153,34 +153,24 @@ class NetworkDocumentationScript(Script):
         import netaddr
 
         prefix_network = netaddr.IPNetwork(str(prefix.prefix))
-        self.log_info(f"Querying IPs for prefix: {prefix.prefix}")
 
-        # Get ALL IPs and filter manually - bypasses any query weirdness
+        # Get all IPs and filter manually (works reliably with netbox_branching)
         all_ips = list(IPAddress.objects.all())
-        self.log_info(f"  -> Total IPs in database: {len(all_ips)}")
 
-        # Manual filter: check if each IP falls within the prefix
+        # Filter IPs that fall within this prefix
         matching_ips = []
         for ip in all_ips:
             try:
                 ip_addr = netaddr.IPAddress(str(ip.address).split('/')[0])
                 if ip_addr in prefix_network:
                     matching_ips.append(ip)
-            except Exception as e:
-                self.log_debug(f"  Error checking IP {ip.address}: {e}")
-
-        ip_count = len(matching_ips)
-        self.log_info(f"  -> Found {ip_count} IPs in {prefix.prefix} (manual filter)")
-
-        # Log sample IPs
-        if ip_count > 0:
-            for ip in matching_ips[:3]:
-                self.log_info(f"     {ip.address} -> {ip.assigned_object}")
-            if ip_count > 3:
-                self.log_info(f"     ... and {ip_count - 3} more")
+            except Exception:
+                pass
 
         # Sort by address
         matching_ips.sort(key=lambda x: netaddr.IPAddress(str(x.address).split('/')[0]))
+
+        self.log_debug(f"Prefix {prefix.prefix}: found {len(matching_ips)} IPs")
 
         return matching_ips
 
@@ -325,12 +315,15 @@ class NetworkDocumentationScript(Script):
 
         for prefix in prefixes:
             try:
-                # Calculate utilization
-                ip_count = IPAddress.objects.filter(address__net_contained=prefix.prefix).count()
-                if prefix.prefix.size > 2:
-                    usable = prefix.prefix.size - 2  # Exclude network and broadcast
-                    utilization = f"{(ip_count / usable * 100):.1f}%" if usable > 0 else "N/A"
-                else:
+                # Get utilization from NetBox's built-in method
+                try:
+                    utilization_data = prefix.get_utilization()
+                    # get_utilization() returns a decimal (0-100) or dict depending on version
+                    if isinstance(utilization_data, dict):
+                        utilization = f"{utilization_data.get('utilization', 0):.1f}%"
+                    else:
+                        utilization = f"{float(utilization_data):.1f}%"
+                except Exception:
                     utilization = "N/A"
 
                 row_data = [
@@ -423,8 +416,16 @@ class NetworkDocumentationScript(Script):
                     sheets_skipped += 1
                     continue
 
-                # Create sheet with sanitized name (Excel limits sheet names to 31 chars)
-                sheet_name = str(prefix.prefix).replace('/', '_')[:31]
+                # Create sheet with prefix description (or CIDR if no description)
+                # Excel limits sheet names to 31 chars, must remove invalid chars: \ / * ? : [ ]
+                if prefix.description:
+                    sheet_name = prefix.description
+                else:
+                    sheet_name = str(prefix.prefix).replace('/', '_')
+                # Sanitize for Excel
+                for char in ['\\', '/', '*', '?', ':', '[', ']']:
+                    sheet_name = sheet_name.replace(char, '-')
+                sheet_name = sheet_name[:31]
                 self.log_debug(f"Creating sheet for prefix: {prefix.prefix} as '{sheet_name}'")
 
                 ws = workbook.create_sheet(sheet_name)
@@ -533,15 +534,6 @@ class NetworkDocumentationScript(Script):
                 self.log_info("=" * 50)
                 self.log_info("PHASE 1: Data Collection")
                 self.log_info("=" * 50)
-
-                # Debug: Check total IP addresses in branch
-                total_ips = IPAddress.objects.count()
-                self.log_info(f"DEBUG: Total IP addresses in current context: {total_ips}")
-
-                # Debug: Sample some IPs to verify branch context
-                sample_ips = IPAddress.objects.all()[:5]
-                for ip in sample_ips:
-                    self.log_info(f"DEBUG: Sample IP: {ip.address}")
 
                 prefixes = self._get_site_prefixes(site)
                 vlans = self._get_site_vlans(site)
