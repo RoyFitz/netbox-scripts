@@ -150,36 +150,42 @@ class NetworkDocumentationScript(Script):
 
     def _get_prefix_ip_addresses(self, prefix):
         """Get all IP addresses within a prefix with their assigned devices."""
-        self.log_info(f"Querying IPs for prefix: {prefix.prefix}")
+        self.log_info(f"Querying IPs for prefix: {prefix.prefix} (VRF: {prefix.vrf})")
 
-        # Try primary method: net_contained lookup
-        ip_addresses = IPAddress.objects.filter(
-            address__net_contained=prefix.prefix
-        ).select_related('tenant').order_by('address')
+        # Primary method: net_contained lookup with matching VRF
+        if prefix.vrf:
+            ip_addresses = IPAddress.objects.filter(
+                address__net_contained=prefix.prefix,
+                vrf=prefix.vrf
+            ).order_by('address')
+        else:
+            # Global/null VRF
+            ip_addresses = IPAddress.objects.filter(
+                address__net_contained=prefix.prefix,
+                vrf__isnull=True
+            ).order_by('address')
 
         ip_count = ip_addresses.count()
-        self.log_info(f"  -> net_contained query found {ip_count} IPs")
+        self.log_info(f"  -> Found {ip_count} IPs (VRF-matched)")
 
-        # Debug: Try alternative query using parent prefix relationship
+        # If no results, try without VRF filter to see if VRF mismatch is the issue
         if ip_count == 0:
-            # Check if IPs have this prefix set as their parent
-            alt_ips = IPAddress.objects.filter(parent=prefix)
-            alt_count = alt_ips.count()
-            self.log_info(f"  -> parent=prefix query found {alt_count} IPs")
+            all_ips_in_range = IPAddress.objects.filter(
+                address__net_contained=prefix.prefix
+            ).order_by('address')
+            all_count = all_ips_in_range.count()
+            if all_count > 0:
+                self.log_warning(f"  -> Found {all_count} IPs WITHOUT VRF filter - VRF mismatch!")
+                for ip in all_ips_in_range[:3]:
+                    self.log_warning(f"     IP {ip.address} is in VRF: {ip.vrf}")
+                # Use these IPs anyway
+                ip_addresses = all_ips_in_range
+                ip_count = all_count
 
-            if alt_count > 0:
-                ip_addresses = alt_ips.order_by('address')
-                ip_count = alt_count
-
-        # Debug: Show the prefix network details
-        self.log_debug(f"  Prefix object: {prefix}")
-        self.log_debug(f"  Prefix.prefix type: {type(prefix.prefix)}")
-        self.log_debug(f"  Prefix.prefix value: {prefix.prefix}")
-
-        # Log first few IPs for debugging
+        # Log sample IPs
         if ip_count > 0:
             for ip in list(ip_addresses)[:3]:
-                self.log_info(f"     Sample IP: {ip.address} (assigned: {ip.assigned_object})")
+                self.log_info(f"     Sample: {ip.address} -> {ip.assigned_object} (VRF: {ip.vrf})")
             if ip_count > 3:
                 self.log_info(f"     ... and {ip_count - 3} more")
 
