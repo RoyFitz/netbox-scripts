@@ -561,18 +561,55 @@ class NetworkDocumentationScript(Script):
             self.log_info(f"Workbook saved to buffer, size: {len(file_content)} bytes")
             self.log_debug(f"Filename: {filename}")
 
-            # Use NetBox's native Job file output for browser download
+            # Try to find the Job object and attach file for download
             from django.core.files.base import ContentFile
+            from core.models import Job
 
-            self.log_debug(f"Job object: {self.job}")
-            self.log_debug(f"Job type: {type(self.job)}")
+            # Get current job from the request or find by current execution
+            job = None
 
-            # Save file to job's output_file field - this creates a download link in the UI
-            self.job.output_file.save(filename, ContentFile(file_content), save=True)
+            # Try different ways to access the job
+            if hasattr(self, 'job'):
+                job = self.job
+                self.log_debug("Found job via self.job")
+            elif hasattr(self, 'request') and hasattr(self.request, 'job'):
+                job = self.request.job
+                self.log_debug("Found job via self.request.job")
+            else:
+                # Try to find the most recent job for this script
+                try:
+                    job = Job.objects.filter(
+                        name=self.__class__.__name__,
+                        status='running'
+                    ).order_by('-created').first()
+                    if job:
+                        self.log_debug(f"Found job via query: {job.id}")
+                except Exception as e:
+                    self.log_debug(f"Could not find job via query: {e}")
 
-            self.log_success(f"Documentation ready for download: {filename} ({len(file_content):,} bytes)")
+            if job and hasattr(job, 'output_file'):
+                # Save file to job's output_file field
+                job.output_file.save(filename, ContentFile(file_content), save=True)
+                self.log_success(f"Documentation ready for download: {filename} ({len(file_content):,} bytes)")
+                return f"Documentation generated successfully!\n\nFile: {filename}\nSize: {len(file_content):,} bytes\n\nClick the download button above to save the file."
 
-            return f"Documentation generated successfully!\n\nFile: {filename}\nSize: {len(file_content):,} bytes\n\nClick the download button above to save the file."
+            # Fallback: Save to media directory with download URL
+            self.log_debug("Job output_file not available, saving to media directory")
+            import os
+            from django.conf import settings
+
+            media_root = getattr(settings, 'MEDIA_ROOT', '/opt/netbox/netbox/media')
+            output_dir = os.path.join(media_root, 'script-outputs')
+            os.makedirs(output_dir, exist_ok=True)
+
+            file_path = os.path.join(output_dir, filename)
+            with open(file_path, 'wb') as f:
+                f.write(file_content)
+
+            download_url = f"/media/script-outputs/{filename}"
+            self.log_success(f"Documentation saved: {filename} ({len(file_content):,} bytes)")
+
+            return f"Documentation generated successfully!\n\nFile: {filename}\nSize: {len(file_content):,} bytes\n\nDownload: {download_url}"
 
         except Exception as e:
             self.log_failure(f"Unexpected error during script execution: {str(e)}")
