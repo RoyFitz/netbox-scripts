@@ -561,61 +561,33 @@ class NetworkDocumentationScript(Script):
             self.log_info(f"Workbook saved to buffer, size: {len(file_content)} bytes")
             self.log_debug(f"Filename: {filename}")
 
-            # Save file using NetBox 4.x Job file output
-            self.log_debug("Attempting to save file output...")
-            try:
-                from django.core.files.base import ContentFile
+            # Generate base64 data URI for direct browser download
+            import base64
+            encoded = base64.b64encode(file_content).decode('utf-8')
+            data_uri = f"data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{encoded}"
 
-                # NetBox 4.x stores job file output via the job model
-                if hasattr(self, 'job') and self.job is not None:
-                    self.log_debug(f"Job object found: {self.job}")
-                    self.log_debug(f"Job attributes: {dir(self.job)}")
+            self.log_success(f"Documentation generated: {filename} ({len(file_content)} bytes)")
 
-                    # Try to use the job's output_file field if available
-                    if hasattr(self.job, 'output_file'):
-                        self.log_debug("Using job.output_file for file storage")
-                        self.job.output_file.save(filename, ContentFile(file_content))
-                        self.job.save()
-                        self.log_success(f"Documentation saved: {filename}")
-                        return f"Documentation generated successfully!\nFile: {filename}\nSize: {len(file_content)} bytes\n\nCheck the job output to download the file."
-                    else:
-                        self.log_debug("job.output_file not available")
-                else:
-                    self.log_debug("No job object available")
+            # Return output with embedded download link
+            # The HTML link with data URI will trigger download when clicked
+            return f"""Documentation generated successfully!
 
-                # Fallback: Save to media directory
-                import os
-                from django.conf import settings
+**File:** {filename}
+**Size:** {len(file_content):,} bytes
 
-                media_root = getattr(settings, 'MEDIA_ROOT', '/opt/netbox/netbox/media')
-                scripts_output_dir = os.path.join(media_root, 'script-outputs')
+---
 
-                self.log_debug(f"Media root: {media_root}")
-                self.log_debug(f"Scripts output dir: {scripts_output_dir}")
+**Click to download:** [Download {filename}]({data_uri})
 
-                # Create output directory if it doesn't exist
-                os.makedirs(scripts_output_dir, exist_ok=True)
+---
 
-                file_path = os.path.join(scripts_output_dir, filename)
-                self.log_debug(f"Writing file to: {file_path}")
-
-                with open(file_path, 'wb') as f:
-                    f.write(file_content)
-
-                self.log_success(f"Documentation generated: {filename}")
-                return f"Documentation generated successfully!\n\nFile saved to: {file_path}\nSize: {len(file_content)} bytes\n\nDownload from: /media/script-outputs/{filename}"
-
-            except Exception as file_error:
-                self.log_warning(f"Error saving file: {str(file_error)}")
-                self.log_debug(f"File error type: {type(file_error).__name__}")
-                import traceback
-                self.log_debug(f"File save traceback:\n{traceback.format_exc()}")
-
-                # Last resort: return base64 encoded data
-                import base64
-                encoded = base64.b64encode(file_content).decode('utf-8')
-                self.log_success(f"Documentation generated (base64 encoded)")
-                return f"Documentation generated but could not save file.\nFilename: {filename}\nSize: {len(file_content)} bytes\n\nBase64 data (first 100 chars): {encoded[:100]}..."
+Or paste this in browser console (F12):
+```javascript
+const a = document.createElement('a');
+a.href = '{data_uri}';
+a.download = '{filename}';
+a.click();
+```"""
 
         except Exception as e:
             self.log_failure(f"Unexpected error during script execution: {str(e)}")
