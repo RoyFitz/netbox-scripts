@@ -150,46 +150,39 @@ class NetworkDocumentationScript(Script):
 
     def _get_prefix_ip_addresses(self, prefix):
         """Get all IP addresses within a prefix with their assigned devices."""
-        self.log_info(f"Querying IPs for prefix: {prefix.prefix} (VRF: {prefix.vrf})")
+        import netaddr
 
-        # Primary method: net_contained lookup with matching VRF
-        if prefix.vrf:
-            ip_addresses = IPAddress.objects.filter(
-                address__net_contained=prefix.prefix,
-                vrf=prefix.vrf
-            ).order_by('address')
-        else:
-            # Global/null VRF
-            ip_addresses = IPAddress.objects.filter(
-                address__net_contained=prefix.prefix,
-                vrf__isnull=True
-            ).order_by('address')
+        prefix_network = netaddr.IPNetwork(str(prefix.prefix))
+        self.log_info(f"Querying IPs for prefix: {prefix.prefix}")
 
-        ip_count = ip_addresses.count()
-        self.log_info(f"  -> Found {ip_count} IPs (VRF-matched)")
+        # Get ALL IPs and filter manually - bypasses any query weirdness
+        all_ips = list(IPAddress.objects.all())
+        self.log_info(f"  -> Total IPs in database: {len(all_ips)}")
 
-        # If no results, try without VRF filter to see if VRF mismatch is the issue
-        if ip_count == 0:
-            all_ips_in_range = IPAddress.objects.filter(
-                address__net_contained=prefix.prefix
-            ).order_by('address')
-            all_count = all_ips_in_range.count()
-            if all_count > 0:
-                self.log_warning(f"  -> Found {all_count} IPs WITHOUT VRF filter - VRF mismatch!")
-                for ip in all_ips_in_range[:3]:
-                    self.log_warning(f"     IP {ip.address} is in VRF: {ip.vrf}")
-                # Use these IPs anyway
-                ip_addresses = all_ips_in_range
-                ip_count = all_count
+        # Manual filter: check if each IP falls within the prefix
+        matching_ips = []
+        for ip in all_ips:
+            try:
+                ip_addr = netaddr.IPAddress(str(ip.address).split('/')[0])
+                if ip_addr in prefix_network:
+                    matching_ips.append(ip)
+            except Exception as e:
+                self.log_debug(f"  Error checking IP {ip.address}: {e}")
+
+        ip_count = len(matching_ips)
+        self.log_info(f"  -> Found {ip_count} IPs in {prefix.prefix} (manual filter)")
 
         # Log sample IPs
         if ip_count > 0:
-            for ip in list(ip_addresses)[:3]:
-                self.log_info(f"     Sample: {ip.address} -> {ip.assigned_object} (VRF: {ip.vrf})")
+            for ip in matching_ips[:3]:
+                self.log_info(f"     {ip.address} -> {ip.assigned_object}")
             if ip_count > 3:
                 self.log_info(f"     ... and {ip_count - 3} more")
 
-        return ip_addresses
+        # Sort by address
+        matching_ips.sort(key=lambda x: netaddr.IPAddress(str(x.address).split('/')[0]))
+
+        return matching_ips
 
     def _get_ip_device_info(self, ip_address):
         """
