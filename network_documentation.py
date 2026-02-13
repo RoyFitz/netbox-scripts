@@ -561,33 +561,18 @@ class NetworkDocumentationScript(Script):
             self.log_info(f"Workbook saved to buffer, size: {len(file_content)} bytes")
             self.log_debug(f"Filename: {filename}")
 
-            # Generate base64 data URI for direct browser download
-            import base64
-            encoded = base64.b64encode(file_content).decode('utf-8')
-            data_uri = f"data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{encoded}"
+            # Use NetBox's native Job file output for browser download
+            from django.core.files.base import ContentFile
 
-            self.log_success(f"Documentation generated: {filename} ({len(file_content)} bytes)")
+            self.log_debug(f"Job object: {self.job}")
+            self.log_debug(f"Job type: {type(self.job)}")
 
-            # Return output with embedded download link
-            # The HTML link with data URI will trigger download when clicked
-            return f"""Documentation generated successfully!
+            # Save file to job's output_file field - this creates a download link in the UI
+            self.job.output_file.save(filename, ContentFile(file_content), save=True)
 
-**File:** {filename}
-**Size:** {len(file_content):,} bytes
+            self.log_success(f"Documentation ready for download: {filename} ({len(file_content):,} bytes)")
 
----
-
-**Click to download:** [Download {filename}]({data_uri})
-
----
-
-Or paste this in browser console (F12):
-```javascript
-const a = document.createElement('a');
-a.href = '{data_uri}';
-a.download = '{filename}';
-a.click();
-```"""
+            return f"Documentation generated successfully!\n\nFile: {filename}\nSize: {len(file_content):,} bytes\n\nClick the download button above to save the file."
 
         except Exception as e:
             self.log_failure(f"Unexpected error during script execution: {str(e)}")
