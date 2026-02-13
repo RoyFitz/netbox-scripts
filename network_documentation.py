@@ -293,14 +293,14 @@ class NetworkDocumentationScript(Script):
         ws = workbook.create_sheet("Summary")
 
         # Set column widths
-        col_widths = [20, 12, 25, 40, 15, 12]
+        col_widths = [20, 12, 25, 40, 18]
         for i, width in enumerate(col_widths, 1):
             ws.column_dimensions[get_column_letter(i)].width = width
 
         # Title
         ws['A1'] = f"Network Summary - {site.name}"
         ws['A1'].font = self.SECTION_FONT
-        ws.merge_cells('A1:F1')
+        ws.merge_cells('A1:E1')
 
         # Prefixes section header
         current_row = 3
@@ -309,7 +309,7 @@ class NetworkDocumentationScript(Script):
 
         # Table headers
         current_row += 1
-        headers = ["Prefix", "VLAN ID", "VLAN Name", "Description", "Used/Available", "Usage %"]
+        headers = ["Prefix", "VLAN ID", "VLAN Name", "Description", "Used/Available"]
         for col, header in enumerate(headers, 1):
             cell = ws.cell(row=current_row, column=col, value=header)
             cell.font = self.HEADER_FONT
@@ -355,8 +355,7 @@ class NetworkDocumentationScript(Script):
                     prefix.vlan.vid if prefix.vlan else "None",
                     prefix.vlan.name if prefix.vlan else "No VLAN",
                     prefix.description or "",
-                    utilization,
-                    utilization_pct  # Hidden percentage for data bar
+                    utilization_pct  # Percentage for data bar
                 ]
 
                 for col, value in enumerate(row_data, 1):
@@ -364,6 +363,10 @@ class NetworkDocumentationScript(Script):
                     cell.font = self.NORMAL_FONT
                     cell.border = self.CELL_BORDER
                     cell.alignment = self.LEFT_ALIGN
+                    # Format the Used/Available column to show count with data bar
+                    if col == 5:
+                        cell.number_format = f'"{utilization}"'
+                        cell.alignment = self.CENTER_ALIGN
 
                 # Store row for data bar range
                 utilization_percentages.append(current_row)
@@ -377,7 +380,7 @@ class NetworkDocumentationScript(Script):
 
                 # Alternate row coloring
                 if (current_row - prefix_start_row) % 2 == 1:
-                    for col in range(1, len(headers) + 1):
+                    for col in range(1, 6):
                         cell = ws.cell(row=current_row, column=col)
                         cell.fill = self.ALT_ROW_FILL
                         # Preserve link styling for prefix column
@@ -390,7 +393,7 @@ class NetworkDocumentationScript(Script):
             except Exception as e:
                 self.log_warning(f"Error processing prefix {prefix.prefix}: {str(e)}")
 
-        # Add data bar conditional formatting to the percentage column (column 6)
+        # Add data bar conditional formatting to the Used/Available column (column 5)
         if utilization_percentages:
             from openpyxl.formatting.rule import DataBarRule
 
@@ -406,7 +409,7 @@ class NetworkDocumentationScript(Script):
                 color='63BE7B'  # Green color
             )
 
-            ws.conditional_formatting.add(f'F{first_row}:F{last_row}', data_bar_rule)
+            ws.conditional_formatting.add(f'E{first_row}:E{last_row}', data_bar_rule)
 
         self.log_info(f"Added {prefixes_with_data} prefixes to summary")
 
