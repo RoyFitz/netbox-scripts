@@ -293,14 +293,14 @@ class NetworkDocumentationScript(Script):
         ws = workbook.create_sheet("Summary")
 
         # Set column widths
-        col_widths = [20, 12, 25, 40, 15, 12]
+        col_widths = [20, 12, 25, 40, 25]  # Wider last column for bar
         for i, width in enumerate(col_widths, 1):
             ws.column_dimensions[get_column_letter(i)].width = width
 
         # Title
         ws['A1'] = f"Network Summary - {site.name}"
         ws['A1'].font = self.SECTION_FONT
-        ws.merge_cells('A1:F1')
+        ws.merge_cells('A1:E1')
 
         # Prefixes section header
         current_row = 3
@@ -309,7 +309,7 @@ class NetworkDocumentationScript(Script):
 
         # Table headers
         current_row += 1
-        headers = ["Prefix", "VLAN ID", "VLAN Name", "Description", "Used/Available", "Usage %"]
+        headers = ["Prefix", "VLAN ID", "VLAN Name", "Description", "Used/Available"]
         for col, header in enumerate(headers, 1):
             cell = ws.cell(row=current_row, column=col, value=header)
             cell.font = self.HEADER_FONT
@@ -325,12 +325,9 @@ class NetworkDocumentationScript(Script):
         # Link font style (blue, underlined)
         link_font = Font(name="Calibri", size=11, color="0563C1", underline="single")
 
-        # Track utilization data for data bars
-        utilization_percentages = []
-
         for prefix in prefixes:
             try:
-                # Calculate utilization as used/total count
+                # Calculate utilization as used/total count with visual bar
                 try:
                     import netaddr
                     prefix_network = netaddr.IPNetwork(str(prefix.prefix))
@@ -344,19 +341,23 @@ class NetworkDocumentationScript(Script):
                     assigned_ips = self._get_prefix_ip_addresses(prefix)
                     used_ips = len(assigned_ips)
 
-                    utilization = f"{used_ips} / {total_ips}"
-                    utilization_pct = (used_ips / total_ips * 100) if total_ips > 0 else 0
+                    # Create text-based progress bar
+                    utilization_pct = (used_ips / total_ips) if total_ips > 0 else 0
+                    bar_length = 10
+                    filled = int(utilization_pct * bar_length)
+                    empty = bar_length - filled
+                    bar = '█' * filled + '░' * empty
+
+                    utilization = f"{used_ips} / {total_ips}  [{bar}]"
                 except Exception:
                     utilization = "N/A"
-                    utilization_pct = 0
 
                 row_data = [
                     str(prefix.prefix),
                     prefix.vlan.vid if prefix.vlan else "None",
                     prefix.vlan.name if prefix.vlan else "No VLAN",
                     prefix.description or "",
-                    utilization,
-                    utilization_pct  # Hidden percentage for data bar
+                    utilization
                 ]
 
                 for col, value in enumerate(row_data, 1):
@@ -364,9 +365,6 @@ class NetworkDocumentationScript(Script):
                     cell.font = self.NORMAL_FONT
                     cell.border = self.CELL_BORDER
                     cell.alignment = self.LEFT_ALIGN
-
-                # Store row for data bar range
-                utilization_percentages.append(current_row)
 
                 # Make prefix cell a hyperlink to its worksheet
                 sheet_name = prefix_sheet_names.get(prefix.id)
@@ -389,24 +387,6 @@ class NetworkDocumentationScript(Script):
 
             except Exception as e:
                 self.log_warning(f"Error processing prefix {prefix.prefix}: {str(e)}")
-
-        # Add data bar conditional formatting to the percentage column (column 6)
-        if utilization_percentages:
-            from openpyxl.formatting.rule import DataBarRule
-
-            first_row = utilization_percentages[0]
-            last_row = utilization_percentages[-1]
-
-            # Create data bar rule (green bar, 0-100 scale)
-            data_bar_rule = DataBarRule(
-                start_type='num',
-                start_value=0,
-                end_type='num',
-                end_value=100,
-                color='63BE7B'  # Green color
-            )
-
-            ws.conditional_formatting.add(f'F{first_row}:F{last_row}', data_bar_rule)
 
         self.log_info(f"Added {prefixes_with_data} prefixes to summary")
 
