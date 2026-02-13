@@ -461,34 +461,17 @@ class NetworkDocumentationScript(Script):
 
     def run(self, data, commit):
         """Main script execution."""
-        import traceback
 
-        # Wrap EVERYTHING in try/except to catch any error
-        try:
-            # Check dependencies
-            if not OPENPYXL_AVAILABLE:
-                self.log_failure("openpyxl library is not installed. Please run: pip install openpyxl")
-                return "ERROR: Missing required library 'openpyxl'"
+        # Check dependencies
+        if not OPENPYXL_AVAILABLE:
+            self.log_failure("openpyxl library is not installed. Please run: pip install openpyxl")
+            return "ERROR: Missing required library 'openpyxl'"
 
-            self.log_info("Script starting...")
-            self.log_debug(f"Data received: {data}")
-            self.log_debug(f"Commit flag: {commit}")
+        site = data['site']
+        include_empty = data.get('include_empty_prefixes', True)
 
-            site = data.get('site')
-            if site is None:
-                self.log_failure("No site provided in data")
-                return "ERROR: No site selected"
-
-            self.log_debug(f"Site object: {site}")
-            self.log_debug(f"Site type: {type(site)}")
-
-            include_empty = data.get('include_empty_prefixes', True)
-
-            self.log_info(f"Starting network documentation generation for site: {site.name}")
-            self.log_debug(f"Site ID: {site.id}, Slug: {site.slug}")
-
-        except Exception as init_error:
-            return f"ERROR during initialization: {type(init_error).__name__}: {str(init_error)}\n\nTraceback:\n{traceback.format_exc()}"
+        self.log_info(f"Starting network documentation generation for site: {site.name}")
+        self.log_debug(f"Site ID: {site.id}, Slug: {site.slug}")
 
         try:
             # Initialize styles
@@ -596,12 +579,14 @@ class NetworkDocumentationScript(Script):
                 return f"Documentation generated but could not save file.\nFilename: {filename}\nSize: {len(file_content)} bytes\n\nBase64 data (first 100 chars): {encoded[:100]}..."
 
         except Exception as e:
-            error_tb = traceback.format_exc()
             self.log_failure(f"Unexpected error during script execution: {str(e)}")
-            self.log_failure(f"Exception type: {type(e).__name__}")
-            self.log_failure(f"Full traceback:\n{error_tb}")
+            self.log_debug(f"Exception type: {type(e).__name__}")
 
-            return f"ERROR: {type(e).__name__}: {str(e)}\n\nFull Traceback:\n{error_tb}"
+            # Log full traceback for debugging
+            import traceback
+            self.log_debug(f"Traceback:\n{traceback.format_exc()}")
+
+            return f"ERROR: {str(e)}"
 
 
 # Register the script
