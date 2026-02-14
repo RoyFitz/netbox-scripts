@@ -225,7 +225,7 @@ class NetworkDocumentationScript(Script):
                 # Virtual machine interface
                 vm = assigned_object.virtual_machine
                 result['device_name'] = vm.name if vm else ''
-                result['location'] = ''
+                result['location'] = vm.device.name if vm and vm.device else ''
                 result['device_role'] = vm.role.name if vm and vm.role else ''
                 result['manufacturer'] = ''
                 result['device_model'] = vm.platform.name if vm and vm.platform else 'Virtual'
