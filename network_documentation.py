@@ -380,8 +380,9 @@ class NetworkDocumentationScript(Script):
                 # Make prefix cell a hyperlink to its worksheet
                 sheet_name = prefix_sheet_names.get(prefix.id)
                 if sheet_name:
+                    from openpyxl.worksheet.hyperlink import Hyperlink
                     prefix_cell = ws.cell(row=current_row, column=3)
-                    prefix_cell.hyperlink = f"#'{sheet_name}'!A1"
+                    prefix_cell.hyperlink = Hyperlink(ref=prefix_cell.coordinate, location=f"'{sheet_name}'!A1")
                     prefix_cell.font = link_font
 
                 # Alternate row coloring
