@@ -254,18 +254,19 @@ class NetworkDocumentationScript(Script):
         ws = workbook.active
         ws.title = "Cover"
 
-        # Set column width
-        ws.column_dimensions['A'].width = 60
+        # Set column widths (A is margin)
+        ws.column_dimensions['A'].width = 2
+        ws.column_dimensions['B'].width = 60
 
         # Title
-        ws['A5'] = "Network Documentation"
-        ws['A5'].font = self.TITLE_FONT
-        ws['A5'].alignment = self.CENTER_ALIGN
+        ws['B5'] = "Network Documentation"
+        ws['B5'].font = self.TITLE_FONT
+        ws['B5'].alignment = self.CENTER_ALIGN
 
         # Site name
-        ws['A8'] = site.name
-        ws['A8'].font = Font(name="Calibri", size=22, bold=True)
-        ws['A8'].alignment = self.CENTER_ALIGN
+        ws['B8'] = site.name
+        ws['B8'].font = Font(name="Calibri", size=22, bold=True)
+        ws['B8'].alignment = self.CENTER_ALIGN
 
         # Site details
         row = 11
@@ -278,17 +279,17 @@ class NetworkDocumentationScript(Script):
         ]
 
         for label, value in details:
-            ws[f'A{row}'] = f"{label}:"
-            ws[f'A{row}'].font = Font(name="Calibri", size=12, bold=True)
-            ws[f'A{row + 1}'] = value
-            ws[f'A{row + 1}'].font = self.SUBTITLE_FONT
-            ws[f'A{row + 1}'].alignment = Alignment(wrap_text=True)
+            ws[f'B{row}'] = f"{label}:"
+            ws[f'B{row}'].font = Font(name="Calibri", size=12, bold=True)
+            ws[f'B{row + 1}'] = value
+            ws[f'B{row + 1}'].font = self.SUBTITLE_FONT
+            ws[f'B{row + 1}'].alignment = Alignment(wrap_text=True)
             row += 3
 
         # Generation timestamp
-        ws[f'A{row + 2}'] = f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        ws[f'A{row + 2}'].font = self.SUBTITLE_FONT
-        ws[f'A{row + 2}'].alignment = self.CENTER_ALIGN
+        ws[f'B{row + 2}'] = f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        ws[f'B{row + 2}'].font = self.SUBTITLE_FONT
+        ws[f'B{row + 2}'].alignment = self.CENTER_ALIGN
 
         self.log_debug("Cover page created successfully")
 
@@ -298,25 +299,26 @@ class NetworkDocumentationScript(Script):
 
         ws = workbook.create_sheet("Summary")
 
-        # Set column widths
+        # Set column widths (A is margin)
+        ws.column_dimensions['A'].width = 2
         col_widths = [12, 25, 20, 18, 40, 18]
-        for i, width in enumerate(col_widths, 1):
+        for i, width in enumerate(col_widths, 2):
             ws.column_dimensions[get_column_letter(i)].width = width
 
         # Title
-        ws['A1'] = f"Network Summary - {site.name}"
-        ws['A1'].font = self.SECTION_FONT
-        ws.merge_cells('A1:F1')
+        ws['B1'] = f"Network Summary - {site.name}"
+        ws['B1'].font = self.SECTION_FONT
+        ws.merge_cells('B1:G1')
 
         # Prefixes section header
         current_row = 3
-        ws[f'A{current_row}'] = "Prefixes and Associated VLANs"
-        ws[f'A{current_row}'].font = self.SECTION_FONT
+        ws[f'B{current_row}'] = "Prefixes and Associated VLANs"
+        ws[f'B{current_row}'].font = self.SECTION_FONT
 
         # Table headers
         current_row += 1
         headers = ["VLAN ID", "VLAN Name", "Prefix", "Gateway", "Description", "Used/Available"]
-        for col, header in enumerate(headers, 1):
+        for col, header in enumerate(headers, 2):
             cell = ws.cell(row=current_row, column=col, value=header)
             cell.font = self.HEADER_FONT
             cell.fill = self.HEADER_FILL
@@ -370,13 +372,13 @@ class NetworkDocumentationScript(Script):
                     utilization_pct  # Percentage for data bar
                 ]
 
-                for col, value in enumerate(row_data, 1):
+                for col, value in enumerate(row_data, 2):
                     cell = ws.cell(row=current_row, column=col, value=value)
                     cell.font = self.NORMAL_FONT
                     cell.border = self.CELL_BORDER
                     cell.alignment = self.LEFT_ALIGN
                     # Format the Used/Available column to show count with data bar
-                    if col == 6:
+                    if col == 7:
                         cell.number_format = f'"{utilization}"'
                         cell.alignment = self.CENTER_ALIGN
 
@@ -387,17 +389,17 @@ class NetworkDocumentationScript(Script):
                 sheet_name = prefix_sheet_names.get(prefix.id)
                 if sheet_name:
                     from openpyxl.worksheet.hyperlink import Hyperlink
-                    prefix_cell = ws.cell(row=current_row, column=3)
-                    prefix_cell.hyperlink = Hyperlink(ref=prefix_cell.coordinate, location=f"'{sheet_name}'!A1")
+                    prefix_cell = ws.cell(row=current_row, column=4)
+                    prefix_cell.hyperlink = Hyperlink(ref=prefix_cell.coordinate, location=f"'{sheet_name}'!B1")
                     prefix_cell.font = link_font
 
                 # Alternate row coloring
                 if (current_row - prefix_start_row) % 2 == 1:
-                    for col in range(1, 7):
+                    for col in range(2, 8):
                         cell = ws.cell(row=current_row, column=col)
                         cell.fill = self.ALT_ROW_FILL
                         # Preserve link styling for prefix column
-                        if col == 3 and sheet_name:
+                        if col == 4 and sheet_name:
                             cell.font = link_font
 
                 current_row += 1
@@ -406,7 +408,7 @@ class NetworkDocumentationScript(Script):
             except Exception as e:
                 self.log_warning(f"Error processing prefix {prefix.prefix}: {str(e)}")
 
-        # Add data bar conditional formatting to the Used/Available column (column 6)
+        # Add data bar conditional formatting to the Used/Available column (column G)
         if utilization_percentages:
             from openpyxl.formatting.rule import DataBarRule
 
@@ -423,19 +425,19 @@ class NetworkDocumentationScript(Script):
                 minLength=0  # No bar when value is 0
             )
 
-            ws.conditional_formatting.add(f'F{first_row}:F{last_row}', data_bar_rule)
+            ws.conditional_formatting.add(f'G{first_row}:G{last_row}', data_bar_rule)
 
         self.log_info(f"Added {prefixes_with_data} prefixes to summary")
 
         # Orphan VLANs section
         if orphan_vlans.exists():
             current_row += 2
-            ws[f'A{current_row}'] = "Orphan VLANs (Not Associated with Prefixes)"
-            ws[f'A{current_row}'].font = self.SECTION_FONT
+            ws[f'B{current_row}'] = "Orphan VLANs (Not Associated with Prefixes)"
+            ws[f'B{current_row}'].font = self.SECTION_FONT
 
             current_row += 1
             orphan_headers = ["VLAN ID", "VLAN Name", "Description", "Status"]
-            for col, header in enumerate(orphan_headers, 1):
+            for col, header in enumerate(orphan_headers, 2):
                 cell = ws.cell(row=current_row, column=col, value=header)
                 cell.font = self.HEADER_FONT
                 cell.fill = self.ORPHAN_HEADER_FILL
@@ -454,13 +456,13 @@ class NetworkDocumentationScript(Script):
                         str(vlan.status) if vlan.status else ""
                     ]
 
-                    for col, value in enumerate(row_data, 1):
+                    for col, value in enumerate(row_data, 2):
                         cell = ws.cell(row=current_row, column=col, value=value)
                         cell.font = self.NORMAL_FONT
                         cell.border = self.CELL_BORDER
 
                     if (current_row - orphan_start_row) % 2 == 1:
-                        for col in range(1, len(orphan_headers) + 1):
+                        for col in range(2, len(orphan_headers) + 2):
                             ws.cell(row=current_row, column=col).fill = self.ALT_ROW_FILL
 
                     current_row += 1
@@ -502,9 +504,10 @@ class NetworkDocumentationScript(Script):
 
                 ws = workbook.create_sheet(sheet_name)
 
-                # Set column widths
+                # Set column widths (A is margin)
+                ws.column_dimensions['A'].width = 2
                 col_widths = [18, 25, 20, 18, 18, 22, 18, 10, 12]
-                for i, width in enumerate(col_widths, 1):
+                for i, width in enumerate(col_widths, 2):
                     ws.column_dimensions[get_column_letter(i)].width = width
 
                 # Find default gateway IP(s) in this prefix
@@ -512,28 +515,28 @@ class NetworkDocumentationScript(Script):
                 gateway_str = ", ".join(str(ip.address).split('/')[0] for ip in gateway_ips) if gateway_ips else "N/A"
 
                 # Prefix header info
-                ws['A1'] = f"Prefix: {prefix.prefix}"
-                ws['A1'].font = self.SECTION_FONT
+                ws['B1'] = f"Prefix: {prefix.prefix}"
+                ws['B1'].font = self.SECTION_FONT
 
-                ws['A2'] = f"VLAN: {prefix.vlan.vid} - {prefix.vlan.name}" if prefix.vlan else "VLAN: None"
-                ws['A2'].font = self.SUBTITLE_FONT
+                ws['B2'] = f"VLAN: {prefix.vlan.vid} - {prefix.vlan.name}" if prefix.vlan else "VLAN: None"
+                ws['B2'].font = self.SUBTITLE_FONT
 
-                ws['A3'] = f"Description: {prefix.description or 'N/A'}"
-                ws['A3'].font = self.SUBTITLE_FONT
+                ws['B3'] = f"Description: {prefix.description or 'N/A'}"
+                ws['B3'].font = self.SUBTITLE_FONT
 
-                ws['A4'] = f"Role: {prefix.role.name if prefix.role else 'N/A'}"
-                ws['A4'].font = self.SUBTITLE_FONT
+                ws['B4'] = f"Role: {prefix.role.name if prefix.role else 'N/A'}"
+                ws['B4'].font = self.SUBTITLE_FONT
 
                 # Default Gateway row (highlighted)
-                ws['A5'] = f"Default Gateway: {gateway_str}"
-                ws['A5'].font = self.GATEWAY_FONT
+                ws['B5'] = f"Default Gateway: {gateway_str}"
+                ws['B5'].font = self.GATEWAY_FONT
                 if gateway_ips:
-                    ws['A5'].fill = self.GATEWAY_FILL
+                    ws['B5'].fill = self.GATEWAY_FILL
 
                 # Table headers
                 current_row = 7
                 headers = ["IP Address", "Device/VM Name", "Location", "Device Role", "Manufacturer", "Device Model", "Interface", "Type", "Status"]
-                for col, header in enumerate(headers, 1):
+                for col, header in enumerate(headers, 2):
                     cell = ws.cell(row=current_row, column=col, value=header)
                     cell.font = self.HEADER_FONT
                     cell.fill = self.HEADER_FILL
@@ -591,7 +594,7 @@ class NetworkDocumentationScript(Script):
                                 device_info['status'] or "N/A"
                             ]
 
-                            for col, value in enumerate(row_data, 1):
+                            for col, value in enumerate(row_data, 2):
                                 cell = ws.cell(row=current_row, column=col, value=value)
                                 cell.border = self.CELL_BORDER
 
@@ -616,7 +619,7 @@ class NetworkDocumentationScript(Script):
                                 "Available"
                             ]
 
-                            for col, value in enumerate(row_data, 1):
+                            for col, value in enumerate(row_data, 2):
                                 cell = ws.cell(row=current_row, column=col, value=value)
                                 cell.border = self.CELL_BORDER
                                 cell.font = available_font
