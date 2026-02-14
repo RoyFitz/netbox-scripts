@@ -293,14 +293,14 @@ class NetworkDocumentationScript(Script):
         ws = workbook.create_sheet("Summary")
 
         # Set column widths
-        col_widths = [20, 12, 25, 40, 18]
+        col_widths = [12, 25, 20, 18, 40, 18]
         for i, width in enumerate(col_widths, 1):
             ws.column_dimensions[get_column_letter(i)].width = width
 
         # Title
         ws['A1'] = f"Network Summary - {site.name}"
         ws['A1'].font = self.SECTION_FONT
-        ws.merge_cells('A1:E1')
+        ws.merge_cells('A1:F1')
 
         # Prefixes section header
         current_row = 3
@@ -309,7 +309,7 @@ class NetworkDocumentationScript(Script):
 
         # Table headers
         current_row += 1
-        headers = ["Prefix", "VLAN ID", "VLAN Name", "Description", "Used/Available"]
+        headers = ["VLAN ID", "VLAN Name", "Prefix", "Gateway", "Description", "Used/Available"]
         for col, header in enumerate(headers, 1):
             cell = ws.cell(row=current_row, column=col, value=header)
             cell.font = self.HEADER_FONT
@@ -346,14 +346,20 @@ class NetworkDocumentationScript(Script):
 
                     utilization = f"{used_ips} / {total_ips}"
                     utilization_pct = (used_ips / total_ips * 100) if total_ips > 0 else 0
+
+                    # Find default gateway IP
+                    gateway_ips = [ip for ip in assigned_ips if self._is_default_gateway(ip)]
+                    gateway_str = str(gateway_ips[0].address).split('/')[0] if gateway_ips else ""
                 except Exception:
                     utilization = "N/A"
                     utilization_pct = 0
+                    gateway_str = ""
 
                 row_data = [
-                    str(prefix.prefix),
                     prefix.vlan.vid if prefix.vlan else "None",
                     prefix.vlan.name if prefix.vlan else "No VLAN",
+                    str(prefix.prefix),
+                    gateway_str,
                     prefix.description or "",
                     utilization_pct  # Percentage for data bar
                 ]
@@ -364,7 +370,7 @@ class NetworkDocumentationScript(Script):
                     cell.border = self.CELL_BORDER
                     cell.alignment = self.LEFT_ALIGN
                     # Format the Used/Available column to show count with data bar
-                    if col == 5:
+                    if col == 6:
                         cell.number_format = f'"{utilization}"'
                         cell.alignment = self.CENTER_ALIGN
 
@@ -374,17 +380,17 @@ class NetworkDocumentationScript(Script):
                 # Make prefix cell a hyperlink to its worksheet
                 sheet_name = prefix_sheet_names.get(prefix.id)
                 if sheet_name:
-                    prefix_cell = ws.cell(row=current_row, column=1)
+                    prefix_cell = ws.cell(row=current_row, column=3)
                     prefix_cell.hyperlink = f"#'{sheet_name}'!A1"
                     prefix_cell.font = link_font
 
                 # Alternate row coloring
                 if (current_row - prefix_start_row) % 2 == 1:
-                    for col in range(1, 6):
+                    for col in range(1, 7):
                         cell = ws.cell(row=current_row, column=col)
                         cell.fill = self.ALT_ROW_FILL
                         # Preserve link styling for prefix column
-                        if col == 1 and sheet_name:
+                        if col == 3 and sheet_name:
                             cell.font = link_font
 
                 current_row += 1
@@ -393,7 +399,7 @@ class NetworkDocumentationScript(Script):
             except Exception as e:
                 self.log_warning(f"Error processing prefix {prefix.prefix}: {str(e)}")
 
-        # Add data bar conditional formatting to the Used/Available column (column 5)
+        # Add data bar conditional formatting to the Used/Available column (column 6)
         if utilization_percentages:
             from openpyxl.formatting.rule import DataBarRule
 
@@ -410,7 +416,7 @@ class NetworkDocumentationScript(Script):
                 minLength=0  # No bar when value is 0
             )
 
-            ws.conditional_formatting.add(f'E{first_row}:E{last_row}', data_bar_rule)
+            ws.conditional_formatting.add(f'F{first_row}:F{last_row}', data_bar_rule)
 
         self.log_info(f"Added {prefixes_with_data} prefixes to summary")
 
