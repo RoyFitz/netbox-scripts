@@ -191,11 +191,13 @@ class NetworkDocumentationScript(Script):
     def _get_ip_device_info(self, ip_address):
         """
         Extract device/VM information from an IP address assignment.
-        Returns dict with device_name, device_role, device_model, interface_name, device_type.
+        Returns dict with device_name, location, device_role, manufacturer, device_model, interface_name, device_type.
         """
         result = {
             'device_name': '',
+            'location': '',
             'device_role': '',
+            'manufacturer': '',
             'device_model': '',
             'interface_name': '',
             'device_type': '',
@@ -212,7 +214,9 @@ class NetworkDocumentationScript(Script):
                 # Physical device interface
                 device = assigned_object.device
                 result['device_name'] = device.name if device else ''
+                result['location'] = device.location.name if device and device.location else ''
                 result['device_role'] = device.role.name if device and device.role else ''
+                result['manufacturer'] = device.device_type.manufacturer.name if device and device.device_type and device.device_type.manufacturer else ''
                 result['device_model'] = device.device_type.model if device and device.device_type else ''
                 result['interface_name'] = assigned_object.name
                 result['device_type'] = 'Device'
@@ -221,7 +225,9 @@ class NetworkDocumentationScript(Script):
                 # Virtual machine interface
                 vm = assigned_object.virtual_machine
                 result['device_name'] = vm.name if vm else ''
+                result['location'] = ''
                 result['device_role'] = vm.role.name if vm and vm.role else ''
+                result['manufacturer'] = ''
                 result['device_model'] = vm.platform.name if vm and vm.platform else 'Virtual'
                 result['interface_name'] = assigned_object.name
                 result['device_type'] = 'VM'
@@ -497,7 +503,7 @@ class NetworkDocumentationScript(Script):
                 ws = workbook.create_sheet(sheet_name)
 
                 # Set column widths
-                col_widths = [18, 25, 18, 22, 18, 10, 12]
+                col_widths = [18, 25, 20, 18, 18, 22, 18, 10, 12]
                 for i, width in enumerate(col_widths, 1):
                     ws.column_dimensions[get_column_letter(i)].width = width
 
@@ -526,7 +532,7 @@ class NetworkDocumentationScript(Script):
 
                 # Table headers
                 current_row = 7
-                headers = ["IP Address", "Device/VM Name", "Device Role", "Device Model", "Interface", "Type", "Status"]
+                headers = ["IP Address", "Device/VM Name", "Location", "Device Role", "Manufacturer", "Device Model", "Interface", "Type", "Status"]
                 for col, header in enumerate(headers, 1):
                     cell = ws.cell(row=current_row, column=col, value=header)
                     cell.font = self.HEADER_FONT
@@ -576,7 +582,9 @@ class NetworkDocumentationScript(Script):
                             row_data = [
                                 ip_display,
                                 device_info['device_name'] or "Unassigned",
+                                device_info['location'] or "N/A",
                                 device_info['device_role'] or "N/A",
+                                device_info['manufacturer'] or "N/A",
                                 device_info['device_model'] or "N/A",
                                 device_info['interface_name'] or "N/A",
                                 device_info['device_type'] or "N/A",
@@ -598,6 +606,8 @@ class NetworkDocumentationScript(Script):
                             # This IP is available/unused - include prefix length
                             row_data = [
                                 f"{ip_str}/{prefix_size}",
+                                "",
+                                "",
                                 "",
                                 "",
                                 "",
